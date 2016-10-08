@@ -23,26 +23,32 @@ class Packet:
             return None
         #extract the fields
         seq_num = int(byte_S[Packet.length_S_length : Packet.length_S_length+Packet.seq_num_S_length])
-        msg_S = byte_S[Packet.length_S_length+Packet.seq_num_S_length+Packet.checksum_length :]
-        return self(seq_num, msg_S, flag)
+        ack = byte_S[Packet.length_S_length+Packet.seq_num_S_length :
+            Packet.length_S_length+Packet.seq_num_S_length+Packet.ack_S_length]
+        msg_S = byte_S[Packet.length_S_length+Packet.seq_num_S_length+
+            Packet.ack_S_length+Packet.checksum_length :]
+        return self(seq_num, msg_S, ack)
         
         
     def get_byte_S(self):
         #convert sequence number of a byte field of seq_num_S_length bytes
         seq_num_S = str(self.seq_num).zfill(self.seq_num_S_length)
         #convert length to a byte field of length_S_length bytes
-        length_S = str(self.length_S_length + len(seq_num_S) + self.checksum_length + len(self.msg_S)).zfill(self.length_S_length)
+        length_S = str(self.length_S_length + len(seq_num_S) + self.checksum_length +
+            len(self.msg_S)).zfill(self.length_S_length)
         #compute the checksum
         checksum = hashlib.md5((length_S+seq_num_S+self.msg_S).encode('utf-8'))
         checksum_S = checksum.hexdigest()
         #compile into a string
-        return length_S + seq_num_S + flag + checksum_S + self.msg_S
-   
+        return length_S + seq_num_S + self.flag + checksum_S + self.msg_S
+
+    @staticmethod
     def is_NAK(self):
         if self.flag is "NAK":
             return True
         return False
 
+    @staticmethod
     def is_ACK(self):
         if self.flag is "ACK":
             return True
@@ -52,8 +58,9 @@ class Packet:
     def corrupt(byte_S):
         #extract the fields
         length_S = byte_S[0:Packet.length_S_length]
-        seq_num_S = byte_S[Packet.length_S_length : Packet.seq_num_S_length+Packet.seq_num_S_length]
-        checksum_S = byte_S[Packet.seq_num_S_length+Packet.seq_num_S_length : Packet.seq_num_S_length+Packet.length_S_length+Packet.checksum_length]
+        seq_num_S = byte_S[Packet.length_S_length : Packet.length_S_length+Packet.seq_num_S_length]
+        checksum_S = byte_S[Packet.length_S_length+Packet.seq_num_S_length+Packet.ack_S_length :
+            Packet.seq_num_S_length+Packet.length_S_length+Packet.checksum_length+Packet.ack_S_length]
         msg_S = byte_S[Packet.seq_num_S_length+Packet.seq_num_S_length+Packet.checksum_length :]
         
         #compute the checksum locally
@@ -109,8 +116,7 @@ class RDT:
         rec_msg = None
         while rec_msg == None:
             rec_msg = self.rdt_2_1_receive()
-
-            if Packet.is_NAK(rec_msg):
+            if Packet.is_NAK(rec_msg) or rec_msg is None:
                 self.network.udt_send(p.get_byte_S())
             if Packet.is_ACK(rec_msg):
                 self.seq_num = (self.seq_num + 1) % 2
@@ -129,7 +135,7 @@ class RDT:
                 return ret_S 
             p = Packet.from_byte_S(self.byte_buffer[0:length])
             if p is None:
-                rdt_2_0_send(
+                rdt_2_1_send(self.seq_num, "", "NAK")
             ret_S = p.msg_S if (ret_S is None) else ret_S + p.msg_S
             self.byte_buffer = self.byte_buffer[length:]
     
