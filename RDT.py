@@ -8,21 +8,23 @@ class Packet:
     ## the number of bytes used to store packet length
     seq_num_S_length = 10
     length_S_length = 10
+    ack_S_length = 3
     ## length of md5 checksum in hex
     checksum_length = 32 
         
-    def __init__(self, seq_num, msg_S):
+    def __init__(self, seq_num, msg_S, flag = "   "):
         self.seq_num = seq_num
         self.msg_S = msg_S
+        self.flag = flag
         
     @classmethod
     def from_byte_S(self, byte_S):
         if Packet.corrupt(byte_S):
-            raise RuntimeError('Cannot initialize Packet: byte_S is corrupt')
+            return None
         #extract the fields
         seq_num = int(byte_S[Packet.length_S_length : Packet.length_S_length+Packet.seq_num_S_length])
         msg_S = byte_S[Packet.length_S_length+Packet.seq_num_S_length+Packet.checksum_length :]
-        return self(seq_num, msg_S)
+        return self(seq_num, msg_S, flag)
         
         
     def get_byte_S(self):
@@ -34,9 +36,18 @@ class Packet:
         checksum = hashlib.md5((length_S+seq_num_S+self.msg_S).encode('utf-8'))
         checksum_S = checksum.hexdigest()
         #compile into a string
-        return length_S + seq_num_S + checksum_S + self.msg_S
+        return length_S + seq_num_S + flag + checksum_S + self.msg_S
    
-    
+    def is_NAK(self):
+        if self.flag is "NAK":
+            return True
+        return False
+
+    def is_ACK(self):
+        if self.flag is "ACK":
+            return True
+        return False
+
     @staticmethod
     def corrupt(byte_S):
         #extract the fields
@@ -55,6 +66,7 @@ class Packet:
 class RDT:
     ## latest sequence number used in a packet
     seq_num = 1
+    last_recieved = 1
     ## buffer of bytes read from network
     byte_buffer = '' 
 
@@ -91,18 +103,44 @@ class RDT:
             
     
     def rdt_2_1_send(self, msg_S):
-        pass
-        
+        p = Packet(self.seq_num, msg_S)
+ 
+        self.network.udt_send(p.get_byte_S())
+        rec_msg = None
+        while rec_msg == None:
+            rec_msg = self.rdt_2_1_receive()
+
+            if Packet.is_NAK(rec_msg):
+                self.network.udt_send(p.get_byte_S())
+            if Packet.is_ACK(rec_msg):
+                self.seq_num = (self.seq_num + 1) % 2
+                return
+
+                    
     def rdt_2_1_receive(self):
-        pass
+        ret_S = None
+        byte_S = self.network.udt_receive()
+        self.byte_buffer += byte_S
+        while True:
+            if(len(self.byte_buffer) < Packet.length_S_length):
+                return ret_S
+            length = int(self.byte_buffer[:Packet.length_S_length])
+            if len(self.byte_buffer) < length:
+                return ret_S 
+            p = Packet.from_byte_S(self.byte_buffer[0:length])
+            if p is None:
+                rdt_2_0_send(
+            ret_S = p.msg_S if (ret_S is None) else ret_S + p.msg_S
+            self.byte_buffer = self.byte_buffer[length:]
     
     def rdt_3_0_send(self, msg_S):
-        pass
-        
+        p = Packet(self.seq_num, msg_S)
+        self.seq_num = (self.seq_num + 1) % 2
+        self.network.udt_send(p.get_byteS())
+                
     def rdt_3_0_receive(self):
         pass
         
-
 if __name__ == '__main__':
     parser =  argparse.ArgumentParser(description='RDT implementation.')
     parser.add_argument('role', help='Role is either client or server.', choices=['client', 'server'])
@@ -116,7 +154,6 @@ if __name__ == '__main__':
         sleep(2)
         print(rdt.rdt_1_0_receive())
         rdt.disconnect()
-        
         
     else:
         sleep(1)
