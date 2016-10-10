@@ -58,12 +58,14 @@ class Packet:
         # extract the fields
         length_s = byte_s[0:Packet.length_s_length]
         seq_num_s = byte_s[Packet.length_s_length: Packet.length_s_length + Packet.seq_num_s_length]
+        ack_s = byte_s[Packet.length_s_length + Packet.seq_num_s_length : Packet.length_s_length +
+              Packet.seq_num_s_length + Packet.ack_s_length]
         checksum_s = byte_s[Packet.length_s_length + Packet.seq_num_s_length + Packet.ack_s_length:
         Packet.seq_num_s_length + Packet.length_s_length + Packet.checksum_length + Packet.ack_s_length]
-        msg_s = byte_s[Packet.seq_num_s_length + Packet.seq_num_s_length + Packet.checksum_length:]
+        msg_s = byte_s[Packet.seq_num_s_length + Packet.seq_num_s_length + ack_s + Packet.checksum_length:]
 
         # compute the checksum locally
-        checksum = hashlib.md5(str(length_s + seq_num_s + msg_s).encode('utf-8'))
+        checksum = hashlib.md5(str(length_s + seq_num_s + ack_s + msg_s).encode('utf-8'))
         computed_checksum_s = checksum.hexdigest()
         # and check if the same
         return checksum_s != computed_checksum_s
@@ -112,7 +114,7 @@ class RDT:
 
         self.network.udt_send(p.get_byte_s())
         rec_msg = None
-        while rec_msg == None:
+        while rec_msg is None:
             rec_msg = self.rdt_2_1_receive()
             if rec_msg is None or Packet.is_nak(rec_msg):
                 self.network.udt_send(p.get_byte_s())
@@ -125,7 +127,7 @@ class RDT:
         byte_s = self.network.udt_receive()
         self.byte_buffer += byte_s
         while True:
-            if (len(self.byte_buffer) < Packet.length_s_length):
+            if len(self.byte_buffer) < Packet.length_s_length:
                 return ret_s
             length = int(self.byte_buffer[:Packet.length_s_length])
             if len(self.byte_buffer) < length:
@@ -142,10 +144,18 @@ class RDT:
         p = Packet(self.seq_num, msg_s)
         self.seq_num = (self.seq_num + 1) % 2
         self.network.udt_send(p.get_byte_s())
+        nxtpckt = Packet.get_packet()
+        if nxtpckt is None or nxtpckt.seq_num != self.seq_num:
+            rdt_3_0_send(msg_s)
 
     def rdt_3_0_receive(self):
-        pass
-
+        p = Packet.get_packet()
+        if p is not None and p.seq_num == self.seq_num:
+            nextpckt = Packet(self.seq_num, "", "ACK")
+            self.network.udt_send(nextpckt)
+        else:
+            nextpckt = Packet(self.seq_num, "", "NAK")
+            self.network.udt_send(nextpckt)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RDT implementation.')
