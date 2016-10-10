@@ -144,6 +144,11 @@ class RDT:
         p = Packet(self.seq_num, msg_s)
         self.seq_num = (self.seq_num + 1) % 2
         self.network.udt_send(p.get_byte_s())
+        nxtpckt = Packet.get_packet()
+        if nxtpckt is not None and nxtpckt.seq_num == self.seq_num:
+            rdt_3_0_receive()
+        else:
+            rdt_3_0_send(msg_s)
 
     def rdt_3_0_receive(self):
         p = Packet.get_packet()
